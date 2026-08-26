@@ -4,6 +4,7 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger, AstrBotConfig
 from astrbot.api.message_components import Image
+from astrbot.core.message.message_event_result import MessageChain
 
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".tiff")
 
@@ -80,15 +81,13 @@ class KbImagePlugin(Star):
                 img = Image(url=resolved)
             else:
                 img = Image.fromFileSystem(resolved)
-            # 通过 yield 返回图片，框架会自动发送并回传工具结果给 LLM
-            yield event.chain_result([img])
+            await event.send(MessageChain(chain=[img]))
             logger.info(f"[kb_image] 已发送图片: {resolved}")
             # 关键：返回给 LLM 的结果，驱动它解说（可在 WebUI 中自定义）
             prompt = self.config.get("post_send_prompt", "") or (
                 "图片已成功发送给用户。接下来请按用户要求和人格要求进行回复"
-                "不要在文字中重复输出图片路径或markdown语法。"
             )
-            return prompt
+            yield prompt
 
         except Exception as e:
             logger.error(f"[kb_image] 发送失败 {resolved}: {e}")
