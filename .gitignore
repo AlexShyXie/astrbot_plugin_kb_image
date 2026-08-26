@@ -205,3 +205,5 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+插件思路说明.md
+插件思路说明LLM_tool.md

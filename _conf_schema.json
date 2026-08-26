@@ -1,0 +1,13 @@
+{
+  "kb_root": {
+    "description": "知识库文件根目录（md 文件和 images 文件夹所在目录的公共父目录）。留空则默认使用插件数据目录 data/plugin_data/astrbot_plugin_kb_image/images，可直接把图片上传到该目录。填了绝对路径则优先使用填写值。Windows 下注意使用正斜杠或双反斜杠，例如 E:/AstrBot/data/kb_docs",
+    "type": "string",
+    "default": ""
+  },
+  "post_send_prompt": {
+    "description": "图片发送成功后回传给 LLM 的提示语，用于指导 AI 接下来如何回复（例如按人格进行解说）。留空则使用内置默认文案。",
+    "type": "text",
+    "hint": "可自定义，例如：'图片已发送给用户。请结合知识库内容对图片做简要解说，不要输出图片路径或markdown语法。'",
+    "default": ""
+  }
+}
