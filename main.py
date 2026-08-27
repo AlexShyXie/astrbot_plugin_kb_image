@@ -258,13 +258,14 @@ class KbImagePlugin(Star):
                 continue
             resolved_list.append(r)
 
-        expanded = []          # 最终要发的本地路径/URL
+        # ---------- 组展开：任何命中本地图的引用都还原为其所属figure整组 ----------
+        expanded = []          # [(路径或URL, 文件名或None), ...] 最终要发的内容
         seen = set()           # 去重
-        expanded_names = []    # 记录实际发送的文件名，便于日志与题注回传
         for r in resolved_list:
             if r.startswith(("http://", "https://")):
                 if r not in seen:
-                    seen.add(r); expanded.append(r)
+                    seen.add(r)
+                    expanded.append((r, None))
                 continue
             name = os.path.basename(r)
             group = self.img_group.get(name) or [name]
@@ -274,11 +275,15 @@ class KbImagePlugin(Star):
                 p = self.img_index.get(n)
                 if p and p not in seen:
                     seen.add(p)
-                    expanded.append(p)
-                    expanded_names.append(n)
+                    expanded.append((p, n))
+
+        # ---------- 截断 ----------
+        total_found = len(expanded)              # 截断前的命中总数
+        to_send = expanded[:MAX_SEND_IMAGES]     # 实际尝试发送的部分
 
         images, sent = [], []
-        for path in expanded[:MAX_SEND_IMAGES]:
+        caps_all, cap_seen = [], set()
+        for path, fname in to_send:
             try:
                 if path.startswith(("http://", "https://")):
                     images.append(Image(url=path))
@@ -287,10 +292,17 @@ class KbImagePlugin(Star):
                 sent.append(path)
             except Exception as e:
                 logger.error(f"[kb_image] 构建图片失败 {path}: {e}")
+                continue
+            # 题注收集：只针对真正发出去的本地图，按内容去重
+            if fname:
+                c = self.group_caption.get(fname)
+                if c:
+                    key = re.sub(r"\s+", "", c)   # 按内容去重，比 id() 可靠
+                    if key not in cap_seen:
+                        cap_seen.add(key)
+                        caps_all.append(c.strip())
 
-
-
-        # 3. 一次性发送所有图片（一条消息带多个图片组件）
+        # ---------- 发送 ----------
         if images:
             try:
                 await event.send(MessageChain(chain=images))
@@ -300,31 +312,36 @@ class KbImagePlugin(Star):
                 yield event.plain_result(f"图片发送失败: {e}")
                 return
 
-        # 4. 组装回传给 LLM 的结果（自定义 post_send_prompt 支持 {count} 占位符）
+        # 截断提示：命中数超过单次上限时告知模型
+        note = ""
+        if total_found > MAX_SEND_IMAGES:
+            note = f"（另有 {total_found - MAX_SEND_IMAGES} 张因超出单次上限未发送）"
+
+        # ---------- 回传给 LLM 的结果 ----------
         default_prompt = (
             "接下来请按用户要求和人格要求进行回复，"
             "不要在文字中重复输出图片路径或markdown语法。"
         )
         custom_prompt = self.config.get("post_send_prompt", "").strip() or default_prompt
-        custom_prompt = custom_prompt.replace("{count}", str(len(sent)))
-        # 取出本次发送图片中第一条可用的题注，帮助 LLM 知道发的是什么图
-        cap = ""
-        for n in expanded_names:
-            c = self.group_caption.get(n)
-            if c:
-                cap = c.strip()
-                break
+        custom_prompt = custom_prompt.replace("{count}", str(len(to_send)))
 
         if failed:
             result_text = (
-                f"已成功发送 {len(sent)} 张图片。以下 {len(failed)} 个引用未找到，"
+                f"已发送 {len(to_send)} 张图片。以下 {len(failed)} 个引用未找到，"
                 f"请确认它们确实来自知识库文本，不要凭空编造：{'、'.join(failed)}"
             )
         else:
-            result_text = f"已成功发送 {len(sent)} 张图片给用户"
-            if cap:
-                # 截断保护：OCR 题注偶尔很长，避免挤占上下文
-                cap_short = cap[:80] + ("…" if len(cap) > 80 else "")
+            result_text = f"已发送 {len(to_send)} 张图片给用户{note}"
+
+        if caps_all:
+            if len(caps_all) == 1:
+                cap_short = caps_all[0][:80] + ("…" if len(caps_all[0]) > 80 else "")
                 result_text += f"，对应知识库图注：{cap_short}"
-            result_text += f"。{custom_prompt}"
+            else:
+                items = []
+                for i, c in enumerate(caps_all[:6], 1):   # 最多列6条防刷屏
+                    items.append(f"{i}. {c[:60]}")
+                result_text += f"，共涉及 {len(caps_all)} 个图组：" + "；".join(items)
+
+        result_text += f"。{custom_prompt}"
         yield result_text
