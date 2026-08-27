@@ -4,6 +4,11 @@
     "type": "string",
     "default": ""
   },
+  "md_root": {
+    "description": "md 文档根目录（按书籍文件夹分目录存放）。留空则默认使用 data/plugin_data/astrbot_plugin_kb_image/md",
+    "type": "string",
+    "default": ""
+  },
   "post_send_prompt": {
     "description": "图片发送成功后回传给 LLM 的提示语，用于指导 AI 接下来如何回复（例如按人格进行解说）。留空则使用内置默认文案。",
     "type": "text",
