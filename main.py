@@ -5,6 +5,7 @@ from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger, AstrBotConfig
 from astrbot.api.message_components import Image
 from astrbot.core.message.message_event_result import MessageChain
+import difflib
 
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".tiff")
 
@@ -134,7 +135,10 @@ class KbImagePlugin(Star):
         - 绝对路径且存在：原样返回
         - 相对路径：在 kb_root 下解析
         - 仅文件名：用启动时建立的索引查找
+        - 精确匹配失败：按子串（前缀/后缀/中间均可）唯一匹配兜底，
+        再失败则按编辑距离唯一匹配兜底
         """
+
         ref = image_ref.strip().strip("!()[]'\" ")
         if ref.startswith(("http://", "https://")):
             return ref
@@ -146,8 +150,52 @@ class KbImagePlugin(Star):
             candidate = os.path.join(self.kb_root, ref.lstrip("./\\"))
             if os.path.exists(candidate):
                 return candidate
+
         filename = os.path.basename(ref)
-        return self.img_index.get(filename)
+
+        # ---- 1. 精确匹配 ----
+        hit = self.img_index.get(filename)
+        if hit:
+            return hit
+
+        stem = os.path.splitext(filename)[0].lower()
+
+        # ---- 2. 子串兜底：片段出现在库内文件名的任意位置（前缀/后缀/中间）----
+        if len(stem) >= 8:  # 太短的不猜，避免误匹配
+            candidates = [
+                f for f in self.img_index
+                if stem in os.path.splitext(f)[0].lower()
+            ]
+            if len(candidates) == 1:
+                logger.warning(
+                    f"[kb_image] 引用 {ref} 不完整（子串匹配），"
+                    f"匹配到 {candidates[0]}"
+                )
+                return self.img_index[candidates[0]]
+            if len(candidates) > 1:
+                logger.warning(
+                    f"[kb_image] 引用 {ref} 子串匹配到 {len(candidates)} 个候选，"
+                    f"放弃模糊匹配: {candidates}"
+                )
+
+        # ---- 3. 编辑距离兜底：处理抄错个别字符（如 l/1、O/0）----
+        if len(stem) >= 16:  # 编辑距离匹配要求更长的片段，避免误匹配
+            stems = [os.path.splitext(f)[0].lower() for f in self.img_index]
+            close = difflib.get_close_matches(stem, stems, n=2, cutoff=0.9)
+            if len(close) == 1:
+                logger.warning(
+                    f"[kb_image] 引用 {ref} 不完整（编辑距离匹配），"
+                    f"匹配到 {close[0]}"
+                )
+                return self.img_index[close[0] + os.path.splitext(filename)[1]]
+            if len(close) > 1:
+                logger.warning(
+                    f"[kb_image] 引用 {ref} 编辑距离匹配到多个候选，放弃: {close}"
+                )
+
+        return None
+
+
 
     def _parse_blocks(self, text: str) -> list:
         """把 md 解析为图片块列表。

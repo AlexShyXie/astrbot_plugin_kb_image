@@ -1,6 +1,6 @@
 name: astrbot_plugin_kb_image # 插件唯一识别名，以 astrbot_plugin_ 前缀开头
 display_name: 知识库图片发送 # 用于展示的名字
 desc: LLM 工具，根据知识库文本中的图片文件名/URL 发送本地或远程图片 # 插件简短描述
-version: v1.0.2 # 插件版本号。格式：v1.1.1 或者 v1.1
+version: v1.0.3 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: HuiXie # 作者
 repo: 无 # 插件的仓库地址
